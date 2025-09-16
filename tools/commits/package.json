@@ -1,0 +1,21 @@
+{
+  "name": "@pravogen/commits",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Локальные инструменты для Conventional Commits (Commitizen + commitlint).",
+  "scripts": {
+    "ptk:commit": "cz",
+    "ptk:lint": "commitlint --config tools/commits/commitlint.config.mjs --from HEAD~1 --to HEAD"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "19.8.1",
+    "@commitlint/config-conventional": "19.8.1",
+    "commitizen": "4.8.4",
+    "cz-conventional-changelog": "3.3.0"
+  },
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
+  }
+}

@@ -1,0 +1,88 @@
+# Lint Commits — проверка сообщений коммитов по Conventional Commits.
+#
+# Что делает:
+#   - На pull_request: проверяет все коммиты PR (см. README экшена).
+#   - На push: проверяет коммиты, вошедшие в пуш.
+#   - На merge_group: поддержка Merge Queue (см. docs GitHub).
+#   - Может вызываться как переиспользуемый workflow через `workflow_call`.
+#
+# Ссылки:
+#   - Экшен commitlint (inputs/outputs, merge_group): https://github.com/wagoid/commitlint-github-action
+#   - checkout@v4 (fetch-depth=0 — полная история и теги): https://github.com/actions/checkout
+#   - commitlint (CI setup): https://commitlint.js.org/guides/ci-setup.html
+#   - Conventional Commits (RU): https://www.conventionalcommits.org/ru/v1.0.0/
+
+name: PTK-Lint Commits
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+  push:
+    branches: ['**']
+  merge_group:
+    types: [checks_requested]
+  workflow_call:
+    inputs:
+      config_path:
+        description: 'Путь к конфигу commitlint (.mjs)'
+        type: string
+        default: tools/commits/commitlint.config.mjs
+      fail_on_warnings:
+        description: 'Проваливать workflow при предупреждениях'
+        type: boolean
+        default: true
+
+# Минимально необходимые права
+permissions:
+  contents: read
+  pull-requests: read
+
+# Отменяем устаревшие запуски на той же ветке/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Важно: job id/name "commitlint" сохраняем — это требуется для Merge Queue.
+  commitlint:
+    name: commitlint
+    runs-on: ubuntu-latest
+
+    steps:
+      # PR/push: обычный checkout. Полная история нужна для корректного анализа диапазонов.
+      - name: Checkout (PR/push)
+        if: ${{ github.event_name != 'merge_group' }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # полный git-лог и теги
+
+      # merge_group: checkout по SHA текущего события (рекомендация экшена)
+      - name: Checkout (merge_group)
+        if: ${{ github.event_name == 'merge_group' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      # Запуск commitlint как Docker-экшена
+      - name: Run commitlint
+        id: cl
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          # Если workflow вызван как reusable — берём inputs; иначе дефолтный путь.
+          configFile: ${{ github.event_name == 'workflow_call' && inputs.config_path || 'tools/commits/commitlint.config.mjs' }}
+          failOnWarnings: ${{ github.event_name == 'workflow_call' && inputs.fail_on_warnings || true }}
+          failOnErrors: true
+          helpURL: https://www.conventionalcommits.org/ru/v1.0.0/
+
+      # Публикация результатов в Job Summary (удобно для UX)
+      - name: Summary (commitlint results)
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const raw = ${{ toJSON(steps.cl.outputs.results) }};
+            await core.summary
+              .addHeading('commitlint: результаты')
+              .addCodeBlock(JSON.stringify(raw, null, 2), 'json')
+              .write();

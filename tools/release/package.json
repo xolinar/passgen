@@ -1,0 +1,12 @@
+{
+  "name": "@pravogen/release",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Инструменты релиза (semantic-release) для репозитория.",
+  "scripts": {
+    "release": "semantic-release"
+  },
+  "devDependencies": {
+    "semantic-release": "^24.0.0"
+  }
+}

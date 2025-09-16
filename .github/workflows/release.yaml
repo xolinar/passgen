@@ -1,0 +1,101 @@
+# Release (semantic-release)
+#
+# Назначение
+#   - Автоматическая публикация релиза по Conventional Commits:
+#       - вычисление версии (semver) и генерация заметок;
+#       - создание GitHub Release и тега;
+#       - опционально — коммит CHANGELOG.md и package.json (если подключён плагин git);
+#       - опционально — публикация в npm (если заданы секреты и включён плагин npm).
+#
+# Требования
+#   - В репозитории установлен и настроен semantic-release (+ нужные плагины).
+#   - Ветка релизов: main (см. триггеры ниже).
+#   - Полная история и теги должны быть доступны в раннере (fetch-depth: 0).
+#
+# Секреты (опционально)
+#   - GITHUB_TOKEN     — создаётся автоматически GitHub Actions (нужны соответствующие permissions).
+#   - NPM_TOKEN        — для публикации в npm (если используете @semantic-release/npm).
+#   - NODE_AUTH_TOKEN  — альтернативное имя для токена npm (поддерживается setup-node).
+#
+# Ручной запуск
+#   - Доступен через workflow_dispatch с флагом dry_run (не публикует, только логирует).
+
+name: Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Запустить semantic-release в режиме dry-run'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write        # создать/обновить релиз и теги
+  issues: write          # комментировать/создавать issues (если плагин это делает)
+  pull-requests: write   # комментировать PR (если плагин это делает)
+  packages: write        # публикация пакетов в GH Packages (если используете)
+  id-token: write        # для npm provenance (если включено в npm-плагине)
+
+# Не отменяем запуски релиза, но группируем по ветке
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: true
+
+jobs:
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Полная история + теги обязательны для корректной работы semantic-release
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2) Node + кеш npm; registry-url задаём заранее для npm publish (если будет)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tools/release/package-lock.json
+
+      # 3) Установка зависимостей (ci, если есть lock; иначе install)
+      - name: Install dependencies
+        working-directory: tools/release
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --fund=false
+          else
+            npm install --no-audit --fund=false
+          fi
+
+      # 4) Git-пользователь для @semantic-release/git (если он у вас включён)
+      - name: Configure Git user (for changelog commits)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # 5) Запуск semantic-release
+      #    - dry-run берётся из workflow_dispatch inputs
+      #    - Для npm публикации токен подхватится из NPM_TOKEN / NODE_AUTH_TOKEN
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN:     ${{ secrets.GITHUB_TOKEN }}         # на случай, если плагины читают GH_TOKEN
+          NPM_TOKEN:    ${{ secrets.NPM_TOKEN }}            # опционально: публикация в npm
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}         # для setup-node/registry-url
+        run: |
+          if [ "${{ github.event.inputs.dry_run || 'false' }}" = "true" ]; then
+            npx --no-install semantic-release --dry-run
+          else
+            npx --no-install semantic-release
+          fi
+

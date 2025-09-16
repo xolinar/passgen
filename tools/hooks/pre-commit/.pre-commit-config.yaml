@@ -1,0 +1,62 @@
+# Назначение
+#   - Интерактивная подготовка сообщения коммита в стиле Conventional Commits
+#     (через Commitizen) на стадии prepare-commit-msg — до открытия редактора.
+#   - Строгая валидация итогового сообщения (через commitlint) на стадии commit-msg.
+#   - Воспроизводимость: фиксированные версии инструментов и зависимостей.
+#
+# Установка (выполнить один раз):
+#   pre-commit install --install-hooks \
+#     --hook-type prepare-commit-msg \
+#     --hook-type commit-msg
+#
+# Примечания
+#   - prepare-commit-msg — хук запускается ПЕРЕД открытием редактора сообщения и позволяет
+#     отредактировать шаблон по месту; удобен для интерактива (Commitizen):
+#     https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks#_prepare_commit_msg   # Git Book
+#   - commit-msg — финальная проверка текста коммита; ненулевой код завершения прерывает commit:
+#     https://git-scm.com/docs/githooks#_commit_msg                 # Git githooks
+#   - pre-commit умеет устанавливать нестандартные hook-типы через
+#     default_install_hook_types и команду install:
+#     https://pre-commit.com/#pre-commit-install                                       # pre-commit docs
+#   - Адаптер Commitizen `cz-conventional-changelog`: при наличии commitlint JS-библиотеки
+#     `maxHeaderWidth` по умолчанию берётся из правила `header-max-length`:
+#     https://github.com/commitizen/cz-conventional-changelog#commitlint               # adapter README
+
+# По умолчанию установить два нужных hook-типа
+default_install_hook_types:
+  - prepare-commit-msg
+  - commit-msg
+
+# Минимальная версия pre-commit (стабильная работа node-языка и ci-настроек)
+minimum_pre_commit_version: "3.7.0"
+
+# Интеграция с pre-commit.ci: автообновления и автопочинки
+ci:
+  autoupdate_schedule: weekly
+  autofix_prs: true
+  autofix_commit_msg: "[pre-commit.ci] автоисправления"
+  autoupdate_commit_msg: "[pre-commit.ci] pre-commit autoupdate"
+
+repos:
+  # 1) Commitizen — интерактивный помощник Conventional Commits.
+  #    Стадия: prepare-commit-msg (создаёт/редактирует сообщение ДО редактора).
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.8.3                      # актуальный релиз
+    hooks:
+      - id: commitizen               # запускает `cz --hook`
+        name: commitizen (interactive conventional commit)
+        stages: [prepare-commit-msg]
+
+  # 2) commitlint — строгая валидация сообщения коммита ПОСЛЕ его сохранения.
+  #    Стадия: commit-msg. NPM-зависимости ставятся в изолированную node-среду pre-commit.
+  - repo: local
+    hooks:
+      - id: commitlint
+        name: commitlint (Conventional Commits enforcement)
+        language: node
+        entry: commitlint --config tools/commits/commitlint.config.mjs --edit
+        pass_filenames: false         # commitlint сам читает .git/COMMIT_EDITMSG при --edit
+        stages: [commit-msg]
+        additional_dependencies:
+          - '@commitlint/cli@19.8.1'
+          - '@commitlint/config-conventional@19.8.1'
